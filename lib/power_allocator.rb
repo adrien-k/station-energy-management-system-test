@@ -1,16 +1,20 @@
 # frozen_string_literal: true
 
 class PowerAllocator
-  # Accepts an array of charger nodes with id, max_power and connectors children with each their own max_power; along with the maximum power available
+  # Accepts an array of charger nodes with id, max_power and sessions children with each their own max_power;
+  # along with the maximum power available
   # ex:
-  # [
+  # chargers = [
   #   {
-  #     id: "CP001", max_power: 300, sessions: [
+  #     id: "CP001",
+  #     max_power: 300,
+  #     sessions: [
   #       { id: "uuid1", max_power: 100 },
   #       { id: "uuid2", max_power: 400 },
   #     ]
   #   ]}
   # ]
+  #
   # Returns a hash of optimally allocated power for each connector node.
   # Ex:
   # {
@@ -20,59 +24,67 @@ class PowerAllocator
   #
   def self.allocate(chargers, available_power)
     # Traverse the tree once to calculate the maximum power each session can receive
-    # given the chargers limits and the sessions max power.
-    session_allocations = init_session_allocations(chargers)
+    # given the chargers limits and the session's vehicle max accepted power.
+    session_nodes = gather_sessions_with_max_power_constraints(chargers)
+
+    # Now that we know the maximum power each session can receive
+    # we allocate the available power evenly while respecting the constraints.
+    balance_power(available_power, session_nodes)
+  end
+
+  # For each sessions, this returns the max_power it can receive given:
+  # - the session's vehicle max accepted power
+  # - the charger max_power
+  # - other sessions and their max_power, as the charger's maximum power is evenly distributed
+  #   when it is a limiting factor.
+  def self.gather_sessions_with_max_power_constraints(chargers)
+    chargers.map do |charger|
+      max_power_per_session = balance_power(charger[:max_power], charger[:sessions])
+
+      charger[:sessions].map do |session|
+        {
+          id: session[:id],
+          max_power: max_power_per_session[session[:id]]
+        }
+      end
+    end.flatten
+  end
+
+  # Balances the available power evenly across nodes that each have a :max_power
+  # and :id properties.
+  # When a node has filled its max_power with less than its fair share, the remaining available
+  # power is distributed evenly across the remaining nodes.
+  #
+  # Example:
+  # available_powers = 100
+  # nodes = [
+  #   { id: "node1", max_power: 50 },
+  #   { id: "node2", max_power: 50 },
+  #   { id: "node3", max_power: 10 }
+  # ]
+  # Returns:
+  # { "node1" => 45, "node2" => 45, "node3" => 10 }
+  def self.balance_power(available_power, nodes)
+    power_per_node = Hash.new(0)
     remaining_power = available_power
 
-    # Now that we know the maximum power each session can receive given the vehicles and charger constraints,
-    # we allocate the available power evenly while respecting the constraints.
-    #
-    # Some sessions may actually use less than their even share of power and the rest can be distributed evenly
-    # across the remaining sessions.
-    # We loop until we have allocated all the power or there are no more sessions with remaining power capacity.
     loop do
-      unfilled_sessions = session_allocations.values.select do |session|
-        session[:allocated_power] < session[:cap_power]
-      end
+      unfilled_nodes = nodes.select { |node| power_per_node[node[:id]] < node[:max_power] }
+      # All nodes have their max_power filled.
+      break if unfilled_nodes.empty?
 
-      break if unfilled_sessions.empty?
+      power_split_per_node = (remaining_power.to_f / unfilled_nodes.count).ceil
 
-      global_share_per_session = (remaining_power.to_f / unfilled_sessions.count).ceil
+      # No more power to distribute (or partial kW, which we skip for simplicity, see #ceil above)
+      break if power_split_per_node <= 0
 
-      break if global_share_per_session.zero? # we only allocate full kW incremens
-
-      unfilled_sessions.each do |session|
-        added_power = [global_share_per_session, session[:cap_power] - session[:allocated_power]].min
-        session[:allocated_power] += added_power
+      unfilled_nodes.each do |node|
+        added_power = [power_split_per_node, node[:max_power] - power_per_node[node[:id]]].min
+        power_per_node[node[:id]] += added_power
         remaining_power -= added_power
       end
     end
 
-    session_allocations.transform_values { |session| session[:allocated_power] }
-  end
-
-  def self.init_session_allocations(chargers)
-    session_allocations = {}
-
-    chargers.map do |charger|
-      if charger[:max_power] < charger[:sessions].sum { |session| session[:max_power] }
-        # When multiple connectors are used on a charger and the total power acceptable
-        # by all vehicles is superior than the charger max power,
-        # each connector only gets an even share of the power at the maximum.
-        # Ex: 300kW charger with 2x200kW connectors, each connector gets 150kW max.
-        #     With 100KW/300KW, they get 100kW/150kW even if they ideally could get 100/200kW.
-        #
-        # TODO: this could be improved if we applied the rebalancing algorithm above to the whole tree.
-        max_share_per_session = charger[:max_power].to_f / charger[:sessions].count
-      end
-      charger[:sessions].each do |session|
-        session_allocations[session[:id]] = {
-          allocated_power: 0,
-          cap_power: max_share_per_session ? [max_share_per_session, session[:max_power]].min : session[:max_power]
-        }
-      end
-    end
-
-    session_allocations
+    power_per_node
   end
 end

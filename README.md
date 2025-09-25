@@ -16,11 +16,11 @@ This is a Ruby-based power management system for electric vehicle charging stati
 
 ## Power Allocation Algorithm
 
-The power allocation system uses a sophisticated two-phase algorithm to ensure optimal and fair power distribution:
+The power allocation system uses a sophisticated two-phase algorithm to ensure optimal and fair power distribution. See [`lib/power_allocator.rb`](lib/power_allocator.rb) for the implementation details.
 
-**Phase 1 - Constraint Analysis**: The system first analyzes the power tree structure, calculating the maximum power each charging session can receive while respecting hardware constraints. For chargers with multiple connectors, power is distributed evenly among active sessions, with each session's allocation capped by both the charger's maximum power and the vehicle's maximum charging capability.
+**Phase 1 - Constraint Analysis**: The system first analyzes the power tree structure, calculating the maximum power each charging session can receive while respecting hardware (vehicle, charger) constraints. 
 
-**Phase 2 - Iterative Power Distribution**: Once constraints are established, the system iteratively distributes available power in equal shares to all sessions that haven't reached their maximum capacity. The algorithm continues this process until all available power is allocated or all sessions reach their limits. Power is allocated in full kW increments to ensure practical implementation.
+**Phase 2 - Iterative Power Distribution**: Once constraints are established, the system iteratively distributes available power in equal shares to all sessions that haven't reached their maximum capacity. The algorithm continues this process until all available power is allocated or all sessions reach their limits. 
 
 **Battery Integration**: The system intelligently manages battery storage to optimize power distribution. As long as the battery has sufficient capacity, its power can be distributed alongside grid power to meet charging demands. Conversely, when grid capacity is not fully utilized, the battery will charge back to its initial capacity, effectively storing excess energy for future use.
 

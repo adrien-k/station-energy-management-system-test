@@ -26,7 +26,7 @@ class Battery
     # This applies both for charging and discharging
     raise 'Cannot allocate more power than the battery can sustain' if power.abs > max_power
 
-    raise 'Not enough capacity to allocate power' if @capacity < minimum_capacity
+    raise 'Not enough capacity to allocate power' if power > 0 && @capacity < minimum_capacity
 
     @allocated_power = power
   end
